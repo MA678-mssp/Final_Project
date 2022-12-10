@@ -1,0 +1,309 @@
+---
+title: "Final Project"
+author: "Tao Guo"
+date: "2022-11-29"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(tidyverse)
+library(stringr)
+library(rstanarm)
+library(knitr)
+library(magrittr)
+library(kableExtra)
+library(gridExtra)
+library(lubridate)
+library(car) 
+library(lme4)
+library(arm)
+library(lmerTest)
+library(lattice)
+require(gridExtra)
+library(ggplot2)
+library(PerformanceAnalytics)
+library(rstanarm)
+library(merTools)
+library(sjPlot)
+library(sjmisc)
+library(performance)
+```
+
+## Abstract
+
+Steam is a digital distribution platform for video games that is developed and operated by Valve Corporation. It is one of the largest game platforms in the PC gaming market, offering a wide variety of games from many different publishers.
+
+Price is an important factor for many game players when deciding whether or not to purchase a game. However, there is no direct relationship between price and game quality, and many lower-priced games can have impressive quality. As a result, game players may be interested in what factors influence the price of games on Steam.
+
+One way to study this question is to use a multilevel model, which allows us to account for the hierarchical structure of the data. In this case, the publisher of the game could be considered a group-level variable, with individual games as the lower level. The multilevel model could then be used to analyze the relationship between game price and other factors, such as release date and rating.
+
+The results of the multilevel model may show that release date and rating are significant factors related to game price. Additionally, the model may reveal that among the top 30 publishers, Square Enix has the highest average game price. However, it is important to note that these results are specific to the data and model used in this study, and may not generalize to other data sets or models.
+
+# Introduction
+
+It is true that rating is often used as a standard for evaluating the quality of a game, and higher-rated games are generally considered to be of higher quality. However, it is also true that there is no direct relationship between price and game quality, and that some good games can be inexpensive while some poor-quality games can be expensive. This can be partially attributed to the subjectivity of game ratings, as different players may have different standards for evaluating a game's quality.
+
+In order to better understand the relationship between game rating, price, and other factors, it may be useful to use a multilevel model. This type of model allows researchers to account for both fixed effects, such as the publisher of a game, and random effects, such as the individual player's standards for evaluating a game. By using a multilevel model, researchers can better understand the factors that influence game ratings and prices and identify any potential patterns or trends.
+
+For example, the multilevel model may reveal that the publisher of a game is a significant predictor of its price, with some publishers having higher average prices than others. In particular, the model may show that Yo Yo Games Ltd. has an average game price of 154 pounds, while the average game price for many other game companies is only 2 pounds. These results can provide insight into the factors that influence game prices and help game players make informed decisions about which games to purchase.
+
+\newpage
+
+# Method
+
+## Data Processing
+
+I found the data from Kaggle website (<https://www.kaggle.com/datasets/nikdavis/steam-store-games>).
+
+This data set contain the steam game information from 1997 to 2019. This data set dovetail describe the several information of game, such as ID, name, developer, publisher, rating, etc.
+
+|   column names   | explanation                                   |
+|:----------------:|:----------------------------------------------|
+|      appid       | Unique identifier for each title              |
+|       name       | Title of app (game)                           |
+|   release_date   | Release date of game                          |
+|    developer     | Name (or names) of developer(s)               |
+|    publisher     | Name (or names) of publisher(s)               |
+|    platforms     | supported platforms. windows;mac;linux        |
+|   required_age   | Minimum required age, 0 are unrated           |
+|    categories    | game categories,single-player;multi-player    |
+|      genres      | game genres, e.g. action;adventure            |
+|   achievements   | Number of in-games achievements               |
+| positive_ratings | Number of positive ratings                    |
+| negative_ratings | Number of negative ratings                    |
+| average_playtime | Average user playtime                         |
+|      owners      | Estimated number of owners. like 20000-50000) |
+|      price       | Current full price of title in GBP (pounds)   |
+
+## Exploratory Data Analysis
+
+```{r include=FALSE}
+Game <- read.csv("Video_Games_Sales_as_at_22_Dec_2016.csv")
+Game1 <- drop_na(Game)
+Game1$User_Score <- as.numeric(Game1$User_Score )
+steam <- read.csv("steam.csv")
+
+steam1 <- steam %>% separate(genres, into = c("genre_1","genre_2","genre_3","genre_4"), sep =";")
+steam1$release_date <- as.Date(steam1$release_date)
+steam2 <- steam1[,-(13:15)]
+steam2 <- drop_na(steam2)
+steam1$positive_ratings <- log(1+steam1$positive_ratings)
+steam1$negative_ratings <- log(1+steam1$negative_ratings)
+steam1$average_playtime <- log(1+steam1$average_playtime)
+steam1$owners <- as.factor(steam1$owners)
+
+
+```
+
+```{r, echo=FALSE,warning=FALSE,fig.height=3.6, fig.width=10, fig.cap="relationship between price and release date"}
+date1 <- ggplot(steam1) +
+  aes(
+    x = release_date,
+    y = log(price)) +
+  geom_point(shape = "circle", size = 1.5) +
+  scale_color_hue(direction = 1)+
+  geom_smooth( method = "lm", se = FALSE, formula = 'y ~ x')
+publisher <- steam1 %>% group_by(publisher) %>% count()%>% arrange(desc(n))
+Top_30_publisher <- publisher$publisher[1:30]
+a <- subset(steam1, steam1$publisher %in% Top_30_publisher)
+date2 <- ggplot(a) +
+  aes(x = release_date, y = log(price)) +
+  geom_point(shape = "circle", size = 1.5) +
+  scale_color_hue(direction = 1) +
+  stat_smooth( method = "lm", formula = 'y ~ x', fullrange=TRUE)+
+  facet_wrap(~publisher)+
+   theme(axis.title=element_text(size=16),
+        axis.text=element_text(size=14),
+        strip.text=element_text(size=14))
+grid.arrange(date1,date2, ncol=2)
+```
+
+Figure 1 illustrates the relationship between price and release date. The left figure shows as the release date increase, the price of the game decrease totally. In right figure show the relationship between the price of the top 30 sales publishers and their game release date. Meanwhile, the left figure also indicates changing to a different publisher, the slope of lines almost does not change for the most plot, so the publisher maybe not have the random effect of the release date.
+
+```{r echo=FALSE,warning=FALSE, fig.height=4, fig.width=10, fig.cap="relationship between price and positive rating"}
+ggplot(steam1) +
+  aes(x = positive_ratings, y = log(price) ) +
+  geom_point(shape = "circle", size = 1.5, colour = "#112446") +
+  theme_minimal()+geom_smooth( method = "lm", se = FALSE, formula = 'y ~ x')
+```
+
+Figure 2 shows the positive correlation between positive ratings and price. The figure 4 shows different publishers have different slopes. Therefore, I will use publishers as random effect of positive ratings. This result is relatively make sense because better game should have better price, and player may have different standard for rating different publishers.
+
+```{r echo=FALSE,warning=FALSE, fig.height=4, fig.width=10, fig.cap="relationship between positive_ratings and price"}
+
+positive2 <- ggplot(a) +
+  aes(x = positive_ratings, y = price, colour = publisher) +
+  geom_point(shape = "circle", size = 1.5) +
+  scale_color_hue(direction = 1) +
+  theme_minimal()+
+  geom_smooth(aes(color = factor(publisher)), method = "lm", se = FALSE, formula = 'y ~ x')
+positive2
+```
+
+The result from figure 3 is a little wired because, in a common idea, the worst game should not be worth to higher price, but facts may come from a different direction. For instance, this is expensive and worst so players give more negative feedback to this game. The left figure in figure 5 shows both intercept and slop are different compared to different publishers. Therefore, the publishers are also the random effect by negative rating
+
+```{r echo=FALSE,warning=FALSE, fig.height=4, fig.width=10, fig.cap="relationship between negative_ratings and price"}
+negative1 <- ggplot(steam1) +
+  aes(x = negative_ratings, y = log(price)) +
+  geom_point(shape = "circle", size = 1.5) +
+  scale_color_hue(direction = 1) +
+  theme_minimal()+
+  geom_smooth( method = "lm", se = FALSE, formula = 'y ~ x')
+negative2 <- ggplot(a) +
+  aes(x = negative_ratings, y = log(price)) +
+  geom_point(shape = "circle", size = 1.5) +
+  scale_color_hue(direction = 1) +
+  stat_smooth( method = "lm", formula = 'y ~ x', fullrange=TRUE)+
+  facet_wrap(~publisher)+
+   theme(axis.title=element_text(size=16),
+        axis.text=element_text(size=14),
+        strip.text=element_text(size=14))
+grid.arrange(negative1, negative2, ncol=2)
+```
+
+```{r echo=FALSE,warning=FALSE, fig.height=4, fig.width=10, fig.cap="relationship between average play time and price"}
+ggplot(steam1) +
+  aes(x = log(average_playtime), y = log(price) ) +
+  geom_point(shape = "circle", size = 1.5, colour = "#112446") +
+  theme_minimal()+geom_smooth( method = "lm", se = FALSE, formula = 'y ~ x')
+```
+
+```{r, echo=FALSE,warning=FALSE, fig.height=4, fig.width=10, fig.cap="relationship between average play time and price"}
+ggplot(a) +
+  aes(x = average_playtime, y = price, colour = publisher) +
+  geom_point(shape = "circle", size = 1.5) +
+  scale_color_hue(direction = 1) +
+  theme_minimal()+
+  geom_smooth(aes(color = factor(publisher)), method = "lm", se = FALSE, formula = 'y ~ x')
+```
+
+Figure 4 shows the positive relationship between average playing time and price. On my opinion, more playing time for game mean this have more content than others, the company may also have higher cost to provide a longer game experience for player, as the cost increase, the price of game also increase. Figure 5 expresses obious vary intercept for different publishers, so the publisher also will the random effect for average playtime in my model.
+
+### Model Fitting
+
+Since different publishers have quite large impact on the model,I determine to use multilevel model to fit steam data sets. For variables, this fixed effect is release date, positive ratings, negative ratings, and average playing time. The publishers is the random effect. Here is the model:
+
+```{r echo=FALSE, warning=FALSE, message=FALSE, error=FALSE}
+
+fit1 <- lmer(data = steam1, price~(1|publisher)+release_date+average_playtime+positive_ratings + negative_ratings+(0+average_playtime|publisher)+(0+positive_ratings|publisher)+(0+negative_ratings|publisher))
+```
+
+<br>
+
+$$
+\begin{aligned}
+price = (1|publisher)+release\ date+average\ playtime+positive\ ratings+negative\ ratings+(0+average\ playtime+\\positive\ ratings+negative\ ratings|publisher)
+\end{aligned}
+$$ This Table is the summary of fixed effect of my model. All variables are considered to significant at $\alpha$ = 0.5. In order to more clear show the fixed to fixed effect, the next figure is also correspond to summary table.
+
+<br>
+
+|                      | Estimate | Std. Error |  df   | t value | Pr(\>\|t\|) |
+|:--------------------:|:--------:|:----------:|:-----:|:-------:|:-----------:|
+|     (Intercept)      |  -34.08  |   1.208    | 23730 |  -28.2  | 0.00 \*\*\* |
+|     release_date     |  0.0021  |  6.8e-05   | 23630 |  31.3   | 0.00 \*\*\* |
+| log_average_playtime |  -0.05   |   0.025    | 2145  |  -1.96  |  0.0497 \*  |
+| log_positive_ratings |   0.30   |   0.044    | 13510 |  14.68  | 0.00 \*\*\* |
+| log_negative_ratings |   0.53   |    0.05    | 23640 |  4.975  | 0.00 \*\*\* |
+
+\newpage
+
+```{r echo=FALSE,warning=FALSE, fig.height=4, fig.width=6, fig.cap="Fixed Effect of Steam Model"}
+plotFEsim(FEsim(fit1, n.sims = 100), level = 0.9, stat = 'median', intercept = FALSE)
+```
+
+<br>
+
+The next figure shows the random effect of top 30 publishers to each variables. From this figure, price baseline of some publisher is higher than others. Meanwhile, I found the publishers did not effect so much on average playing time. Fot positive and negative rating, the random effect work well, which obviously shows some publishers have higher positive ratings than others.
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
+fit2 <- lmer(data = a, price~(1|publisher)+release_date+average_playtime+positive_ratings+negative_ratings+(0+average_playtime|publisher)+(0+positive_ratings|publisher)+(0+negative_ratings|publisher))
+```
+
+```{r echo=FALSE}
+Team_level <- REsim(fit2, n.sims = 1000) 
+Team_level$term <- factor(Team_level$term); Team_level$groupID <- factor(Team_level$groupID)
+```
+
+```{r echo=FALSE, fig.height=5, fig.width=8, fig.cap="Random Effect of Model"}
+ggplot(Team_level) + 
+  geom_pointrange(aes(x = groupID, y = mean, ymax = mean+2*sd, ymin = mean-2*sd, group = term, color = term)) +
+  facet_wrap(~term, ncol = 3) + ylab("Random Effect") + xlab("Publisher") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 7)) + theme(legend.position = "none")
+```
+
+
+
+## Result
+
+In order to interpret my model, lets use one of famous publisher Square Enix as example. Firstly, I build up following formula of fixed effect $$price = -34.08 + 0.0021\times release\ date  -0.05\times log(1+average\ playtime) + 0.643\times log(positive\ ratings)$$ $$+0.247\times log(negative\ ratings) $$
+
+<br>
+
+After adding the random effect of Square Enix, the formula is: $$price = -32.1+ 0.0021\times release\ date -0.071\times log(1+average\ playtime)+ 0.021\times log(positive\ ratings)$$ $$+0.957\times log(negative\ ratings) $$ In this formula, only average playtime are negative. Other parameters are positive. This parameter of release date indicates the price of Square Enix's game increased by 0.0021 pounds every day, which does not correspond to my EDA plot, but it is reasonable because this parameter may reflect the inflation between 1994 to 2019. The estimator of average playtime means every unit increase on the log scale of average playtime, the price will drop by 0.071 pounds. This result is different from my previous thought. In general, more playtime means the game has more content, which affects the cost of the game. I also can use different aspects to explain this result. people may easily give positive ratings when they only play for a few hours, but when they play for a long time, they will have a more comprehensive understanding of the game to change their opinion to negative. The parameter of positive rating means one unit increase in the log scale of positive rating the price will increase by 0.021 pounds. The parameter of negative rating means one unit increase in the log scale of negative rating the price will increase by 0.957 pounds. These results are the same to my original thought, and the negative rating has more effects on price than positive ratings
+
+### Model Checking
+The next figure is th residual plot and qq plot. The mean of residuals is close to 0, but the variance of residuals increase, which indicate some correlation I do not find from data. For qq plot, the middle parts of plot is closer to normality, but two two tail diverge from normality. Based on the density plot, my model is over dispersion at 0 to 10, which overestimates price of game. 
+```{r echo=FALSE,,warning=FALSE,message=FALSE,error=FALSE, fig.height=4, fig.width=8, fig.cap="Residual plot and QQ plot."}
+resdul <- plot(fit1, xlim = c(0,50))
+qqplot <- qqmath(fit1)
+grid.arrange(resdul, qqplot, ncol=2)
+```
+
+
+
+```{r echo=FALSE,warning=FALSE,message=FALSE,error=FALSE, fig.height=5, fig.width=8, fig.cap="Model Fitting check"}
+
+ess <- data.frame(fit1=predict(fit1))
+ess$price <- steam1$price
+p1 <- ggplot() + 
+  geom_density(data = ess, aes(x = fit1), color = "grey", lwd = 1)+coord_cartesian(xlim = c(0, 50))+
+  geom_density(data = ess, aes(x = price), color = "red", lwd = 1)
+p1
+```
+
+## Discussion
+In my report, I would like to figure out what factors may influence the price of a game. I built this multilevel model. From the fixed effect table, every variable is significant to the game price. Although the random effect publishers are not related to each variable, which proves different publishers have different price baselines and players also have different attributes for different publishers. However, there are many limitations to my model. Firstly, I should be more careful to select data sets because many variables are useless to my analysis. Due to the model checking, I should consider more about the random effect, I may ignore some correlations in the data sets. For the next steps, I will carefully select the data and considering the potential for random effects can improve the accuracy and reliability of your model. Additionally, incorporating additional variables that may be relevant to the game price can provide a more complete picture of the factors that influence the price..
+
+
+## Reference
+
+Frank Zhang <https://github.com/BU-Franky/MA678_midterm>
+
+## Appendix
+
+```{r, echo=FALSE,,warning=FALSE,message=FALSE,error=FALSE}
+ggplot(steam1) +
+  aes(
+    x = release_date,
+    y = price,
+    colour = factor(platforms),
+    group = factor(platforms)
+  ) +
+  geom_point(shape = "circle", size = 1.5) +
+  scale_color_hue(direction = 1)+
+  geom_smooth(aes(color = factor(platforms)), method = "lm", se = FALSE, formula = 'y ~ x')
+```
+
+```{r, echo=FALSE,,warning=FALSE,message=FALSE,error=FALSE}
+cheap <- steam1 %>% group_by(publisher)%>% mutate(average = mean(price))
+```
+
+```{r, echo=TRUE,warning=FALSE,message=FALSE,error=FALSE}
+b <- steam1
+b$price <- log(1+b$price)
+b %<>% separate(release_date, into=c("year","month","day"), sep = "-")
+b$year <- as.numeric(b$year)
+chart.Correlation(b[, c(23,3,18:21)], histogram=TRUE, pch=20)
+```
+```{r,echo=FALSE}
+pp_check(fit1)
+```
+```{r, echo=FALSE}
+pp_check(fit2)
+```
+
